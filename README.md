@@ -19,7 +19,29 @@ Custom addons are defined in a separate file called custom_addons.json. If the f
 
 For each URL, the program fetches the manifest and flags directly from the addon source, ensuring accurate metadata. These addons are then saved in the JSON file and automatically installed to all accounts during execution.
 
+## Getting Started
+### 1. Install [Python](https://www.python.org/downloads/ "Python")
+Go to the official Python [Download Page](https://www.python.org/downloads/ "Download Page") and download Python for your OS.
+Important: Check the box for:
+✅ "Add Python to PATH" before installing.
+
+### 2. Install Dependencies
+Open Command Prompt (Windows) or Terminal (Mac/Linux) and run:
+
+`pip install aiohttp`
+`pip install asyncio`
+`pip install requests`
+
+### 3. Prepare CSV File
+Ensure stremio_logins.csv in the same directory as the script
+
+### 4. Run the Script
+`python3 stremio_readdon.py` in terminal 
+or just double click the stremio_readdon.py file (should also open)
+
+*If you are still stuck, use ChatGPT to guide you...*
 
 > *If I have saved you time, consider donating **SOL**, thankyou & merry christmas. *
 
 ### 4dXf9Pnjjon2aA7bxoyJ1f8Y1Y1KmyThwxApj4XezHPY
+
