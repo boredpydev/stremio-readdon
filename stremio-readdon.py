@@ -11,7 +11,7 @@ ADDON_COLLECTION_SET_URL = 'https://api.strem.io/api/addonCollectionSet'
 
 HEADERS = {'Content-Type': 'application/json'}
 CUSTOM_ADDONS_FILE = 'custom_addons.json'
-LOGIN_CSV_FILE = r'C:\Users\USER\Documents\stremio_logins.csv'
+LOGIN_CSV_FILE = r'stremio_logins.csv'
 
 # Default addons (safe to keep)
 DEFAULT_ADDONS = {
@@ -50,7 +50,7 @@ async def load_custom_addons():
 
     custom_addons = []
     print("No custom addons found. Enter addon URLs (type 'done' to finish):")
-    print("Example Input: https://torrentio.strem.fun/sort=size%7Cqualityfilter=other,scr,cam,unknown%7Csizefilter=5GB,%205GB%7Cdebridoptions=nocatalog%7Ctorbox=api_key}/manifest.json")
+    print("Example Input: https://torrentio.strem.fun/qualityfilter=480p,unknown%7Climit=2%7Csizefilter=100GB,5GB%7Cdebridoptions=nodownloadlinks%7Ctorbox=KEY_HIDDEN/manifest.json")
 
     async with aiohttp.ClientSession() as session:
         while True:
@@ -58,6 +58,12 @@ async def load_custom_addons():
             if url.lower() == 'done':
                 break
 
+            # Check if the URL ends with /configure and replace it
+            if url.endswith('/configure'):
+                url = url.replace('/configure', '/manifest.json')
+                print(f"Updated URL to: {url}")
+
+            # Fetch manifest data
             manifest = await fetch_manifest(url, session)
             if manifest:
                 addon = {
@@ -70,6 +76,7 @@ async def load_custom_addons():
             else:
                 print("Invalid addon URL. Try again.")
 
+    # Save custom addons to JSON file
     with open(CUSTOM_ADDONS_FILE, 'w') as file:
         json.dump(custom_addons, file, indent=4)
     return custom_addons
