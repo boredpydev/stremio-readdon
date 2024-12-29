@@ -10,8 +10,8 @@ ADDON_COLLECTION_GET_URL = 'https://api.strem.io/api/addonCollectionGet'
 ADDON_COLLECTION_SET_URL = 'https://api.strem.io/api/addonCollectionSet'
 
 HEADERS = {'Content-Type': 'application/json'}
-CUSTOM_ADDONS_FILE = 'custom_addons.json'
-LOGIN_CSV_FILE = r'stremio_logins.csv' # you need to make the stremio_logins.csv file 
+CUSTOM_ADDONS_FILE = r'custom_addons.json'
+LOGIN_CSV_FILE = r'stremio_logins.csv'  # CSV file for account info
 
 # Default addons (safe to keep)
 DEFAULT_ADDONS = {
@@ -50,7 +50,6 @@ async def load_custom_addons():
 
     custom_addons = []
     print("No custom addons found. Enter addon URLs (type 'done' to finish):")
-    print("Example Input: https://torrentio.strem.fun/qualityfilter=480p,unknown%7Climit=2%7Csizefilter=100GB,5GB%7Cdebridoptions=nodownloadlinks%7Ctorbox=KEY_HIDDEN/manifest.json")
 
     async with aiohttp.ClientSession() as session:
         while True:
@@ -58,7 +57,7 @@ async def load_custom_addons():
             if url.lower() == 'done':
                 break
 
-            # Check if the URL ends with /configure and replace it
+            # Replace /configure with /manifest.json
             if url.endswith('/configure'):
                 url = url.replace('/configure', '/manifest.json')
                 print(f"Updated URL to: {url}")
@@ -100,6 +99,27 @@ async def get_addons(auth_key, session):
         return data['result']['addons']
 
 
+async def update_addons(auth_key, addons, session):
+    """Updates the addon collection for a given account."""
+    payload = {
+        'authKey': auth_key,
+        'type': 'AddonCollectionSet',
+        'addons': addons
+    }
+    async with session.post(ADDON_COLLECTION_SET_URL, headers=HEADERS, json=payload) as response:
+        response.raise_for_status()
+        await log_action("UPDATE", "Addons updated successfully.")
+
+
+async def write_csv(login_data):
+    """Writes updated auth tokens to CSV."""
+    with open(LOGIN_CSV_FILE, 'w', newline='') as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(['email', 'password', 'auth_token'])
+        for email, data in login_data.items():
+            writer.writerow([email, data['password'], data['auth_token']])
+
+
 async def clone_addons(email, password):
     """Clones addons from a given account."""
     try:
@@ -129,80 +149,56 @@ async def clone_addons(email, password):
 async def process_account(email, password, auth_key, login_data, session, custom_addons):
     """Processes each Stremio account asynchronously."""
     try:
-        # Authenticate using stored auth key
-        if auth_key:
-            try:
-                addons = await get_addons(auth_key, session)
-                await log_action(email, "Authenticated with stored auth token.")
-            except:
-                await log_action(email, "Stored auth token failed. Re-authenticating...")
-                auth_key = await login_and_get_auth(email, password, session)
-                login_data[email]['auth_token'] = auth_key
-                addons = await get_addons(auth_key, session)
-                await log_action(email, "Re-authenticated and updated auth token.")
-        else:
-            # Login if no auth token
-            await log_action(email, "No stored token. Logging in...")
+        # Authenticate using stored auth token or login
+        if not auth_key:
+            await log_action(email, "No token. Logging in...")
             auth_key = await login_and_get_auth(email, password, session)
             login_data[email]['auth_token'] = auth_key
-            addons = await get_addons(auth_key, session)
-            await log_action(email, "Logged in and stored new auth token.")
+            await write_csv(login_data)  # Write updated token immediately
 
-        # Process addons
+        # Fetch current addons
+        addons = await get_addons(auth_key, session)
+
+        # Process addons (keep defaults and Trakt addons, add custom ones)
         updated_addons = [addon for addon in addons if addon['manifest']['id'] in DEFAULT_ADDONS or
                           "trakt" in addon['manifest']['id'].lower()]
         updated_addons += custom_addons
-        await log_action(email, "Processed addons successfully.")
         await update_addons(auth_key, updated_addons, session)
+        await log_action(email, "Processed addons successfully.")
 
     except Exception as e:
         await log_action(email, f"Error: {str(e)}")
 
 
-async def update_addons(auth_key, addons, session):
-    """Updates the addon collection for a given account."""
-    payload = {
-        'authKey': auth_key,
-        'type': 'AddonCollectionSet',
-        'addons': addons
-    }
-    async with session.post(ADDON_COLLECTION_SET_URL, headers=HEADERS, json=payload) as response:
-        response.raise_for_status()
-        await log_action("UPDATE", "Addons updated successfully.")
-
-
 async def main():
-    """Main function to process all logins concurrently."""
-    login_data = {}
-    process_count = 0  # Counter for processed accounts
-    tasks = []
+    """Main function to process all logins."""
+    print("[1] Process accounts.")
+    print("[2] Clone addons from an account.")
+    option = input("Choose an option: ")
 
-    # Prompt for cloning or standard execution
-    print("Options:")
-    print("[1] Process all accounts (remove non-default addons and install custom addons)")
-    print("[2] Clone addons from a specific account")
-    option = input("Choose an option (1/2): ").strip()
-
-    if option == '2':
-        email = input("Enter email for the account to clone addons from: ").strip()
-        password = input("Enter password for the account: ").strip()
+    if option == "2":
+        email = input("Enter email of account to clone: ")
+        password = input("Enter password: ")
         await clone_addons(email, password)
         return
 
+    login_data = {}
     custom_addons = await load_custom_addons()
 
+    # Read login data
     with open(LOGIN_CSV_FILE, 'r') as csv_file:
         reader = csv.DictReader(csv_file)
         for row in reader:
             login_data[row['email']] = {'password': row['password'], 'auth_token': row.get('auth_token', '')}
 
     async with aiohttp.ClientSession() as session:
-        for email, data in login_data.items():
-            tasks.append(process_account(email, data['password'], data['auth_token'], login_data, session, custom_addons))
-            process_count += 1  # Increment process count
+        tasks = [
+            process_account(email, data['password'], data['auth_token'], login_data, session, custom_addons)
+            for email, data in login_data.items()
+        ]
         await asyncio.gather(*tasks)
 
-    print(f"Processed {process_count} accounts successfully.")
+    await write_csv(login_data)
 
 
 if __name__ == "__main__":
